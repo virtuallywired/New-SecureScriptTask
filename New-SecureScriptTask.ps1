@@ -64,7 +64,6 @@ https://virtuallywired.io
         Execute  = "powershell.exe";
         Argument = "$($TaskArg)"
     }
-    
     $TaskAction = New-ScheduledTaskAction @Params
     
     ## Creating Task Principal.
