@@ -56,13 +56,38 @@ https://virtuallywired.io
         [ValidateSet("Highest", "Limited")]
         [String]$RunLevel = "Highest"
     )
-    ## Creating Task Argument String Using File Hash and Script Path.
-    [string]$TaskArg = 'If ((Get-FileHash "{0}").Hash -eq "{1}") {{"{0}"}}' -f $ScriptPath, (Get-FileHash -Path $ScriptPath).Hash
+    ## Create an encoded task command that validates the script before running it.
+    ## Encoding avoids command-line quoting issues for paths containing spaces or quotes.
+    [string]$EscapedScriptPath = $ScriptPath.Replace("'", "''")
+    [string]$ScriptHash = (Get-FileHash -LiteralPath $ScriptPath -Algorithm SHA256).Hash
+    [string]$TaskCommand = @"
+`$ErrorActionPreference = 'Stop'
+try {
+    `$ActualHash = (Get-FileHash -LiteralPath '$EscapedScriptPath' -Algorithm SHA256).Hash
+    if (`$ActualHash -ne '$ScriptHash') {
+        throw 'Script integrity check failed: the file hash does not match the registered hash.'
+    }
+
+    & '$EscapedScriptPath'
+    if (-not `$?) {
+        exit 1
+    }
+
+    exit 0
+}
+catch {
+    [Console]::Error.WriteLine(`$_.Exception.Message)
+    exit 1
+}
+"@
+    [string]$EncodedCommand = [Convert]::ToBase64String(
+        [Text.Encoding]::Unicode.GetBytes($TaskCommand)
+    )
     
     ## Creating New Task Action.
     $Params = @{
         Execute  = "powershell.exe";
-        Argument = "$($TaskArg)"
+        Argument = "-NoProfile -NonInteractive -EncodedCommand $EncodedCommand"
     }
     $TaskAction = New-ScheduledTaskAction @Params
     
